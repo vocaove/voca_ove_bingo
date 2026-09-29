@@ -32,15 +32,15 @@ export default function BingoApp() {
   const [isTicketClaimed, setIsTicketClaimed] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
 
-  // 💡 共有URL（Base64エンコード対応）から安全にデータを復元する
+  // 💡 特殊文字や日本語に完全対応した安全なURLデータ復元
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const dataParam = params.get('data');
 
     if (dataParam) {
       try {
-        // Base64からデコードしてJSONを復元（自由入力にも完全対応）
-        const jsonString = decodeURIComponent(escape(atob(dataParam)));
+        // encodeURIComponentでエンコードされた文字列を確実にデコード
+        const jsonString = decodeURIComponent(dataParam);
         const savedTitles = JSON.parse(jsonString);
 
         const newBoard = createEmptyBoard().map((cell, index) => {
@@ -53,26 +53,32 @@ export default function BingoApp() {
         setIsReadOnly(true);
       } catch (e) {
         console.error('共有データの読み込みに失敗しました', e);
-        // フォールバック（旧形式対応）
+        // フォールバック（旧形式 Base64 やカンマ区切り対応）
         try {
-          const indices = dataParam.split(',').map(n => parseInt(n, 10));
+          let savedTitles = [];
+          if (dataParam.includes(',')) {
+            const indices = dataParam.split(',').map(n => parseInt(n, 10));
+            savedTitles = indices.map(presetIndex => (presetIndex !== undefined && ADMIN_PRESET_SONGS[presetIndex]) ? ADMIN_PRESET_SONGS[presetIndex].title : '');
+          } else {
+            const decoded = atob(dataParam);
+            savedTitles = JSON.parse(decodeURIComponent(escape(decoded)));
+          }
+
           const newBoard = createEmptyBoard().map((cell, index) => {
             if (cell.isFree) return cell;
-            const presetIndex = indices[index];
-            const song = (presetIndex !== undefined && ADMIN_PRESET_SONGS[presetIndex]) ? ADMIN_PRESET_SONGS[presetIndex] : { title: '' };
-            return { ...cell, title: song.title };
+            return { ...cell, title: savedTitles[index] || '' };
           });
           setBoard(newBoard);
           setIsEditMode(false);
           setIsReadOnly(true);
         } catch (err) {
-          window.alert('共有データの形式が正しくありません。');
+          window.alert('共有データの読み込みに失敗しました。');
         }
       }
     } else {
-      const savedBoard = localStorage.getItem('vocaOvaBingoBoard_v3');
-      const savedMode = localStorage.getItem('vocaOvaBingoMode_v3');
-      const savedClaimed = localStorage.getItem('vocaOvaBingoClaimed_v3');
+      const savedBoard = localStorage.getItem('vocaOvaBingoBoard_v4');
+      const savedMode = localStorage.getItem('vocaOvaBingoMode_v4');
+      const savedClaimed = localStorage.getItem('vocaOvaBingoClaimed_v4');
       if (savedBoard) setBoard(JSON.parse(savedBoard));
       if (savedMode) setIsEditMode(JSON.parse(savedMode));
       if (savedClaimed) setIsTicketClaimed(JSON.parse(savedClaimed));
@@ -81,9 +87,9 @@ export default function BingoApp() {
 
   useEffect(() => {
     if (!isReadOnly) {
-      localStorage.setItem('vocaOvaBingoBoard_v3', JSON.stringify(board));
-      localStorage.setItem('vocaOvaBingoMode_v3', JSON.stringify(isEditMode));
-      localStorage.setItem('vocaOvaBingoClaimed_v3', JSON.stringify(isTicketClaimed));
+      localStorage.setItem('vocaOvaBingoBoard_v4', JSON.stringify(board));
+      localStorage.setItem('vocaOvaBingoMode_v4', JSON.stringify(isEditMode));
+      localStorage.setItem('vocaOvaBingoClaimed_v4', JSON.stringify(isTicketClaimed));
     }
   }, [board, isEditMode, isTicketClaimed, isReadOnly]);
 
@@ -132,7 +138,6 @@ export default function BingoApp() {
     if (cell.isFree) return;
 
     if (isReadOnly) {
-      // 💡 閲覧時は常に安全なYouTube検索結果を開く
       if (cell.title) {
         window.open(getYouTubeSearchUrl(cell.title), '_blank');
       }
@@ -159,7 +164,7 @@ export default function BingoApp() {
     }
   };
 
-  // 💡 自由形式の文字も含めてURLに安全に埋め込めるように修正
+  // 💡 特殊文字を含めて安全にURL化する方式
   const handleConfirmParticipation = async () => {
     const emptyCount = board.filter(cell => !cell.isFree && !cell.title).length;
     if (emptyCount > 0) {
@@ -179,12 +184,11 @@ export default function BingoApp() {
     setIsEditMode(false);
     setSelectedCell(null);
 
-    // すべてのタイトルの配列をJSONにしてBase64エンコード（日本語・記号・自由入力の完全保護）
     const titlesArray = board.map(cell => cell.isFree ? 'FREE' : (cell.title || ''));
     const jsonString = JSON.stringify(titlesArray);
-    const base64Data = btoa(unescape(encodeURIComponent(jsonString)));
+    const encodedData = encodeURIComponent(jsonString);
 
-    const generatedShareableUrl = `${window.location.origin}${window.location.pathname}?data=${base64Data}`;
+    const generatedShareableUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
     setShareUrl(generatedShareableUrl);
 
     const element = document.getElementById('bingo-board-capture');
