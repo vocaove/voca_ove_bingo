@@ -4,31 +4,16 @@ import { ADMIN_PRESET_SONGS } from './songsData';
 
 const STAFF_PIN_CODE = '8839';
 
-const getCleanYouTubeUrl = (url) => {
-  if (!url) return '';
-  try {
-    if (url.includes('youtu.be/')) {
-      const videoId = url.split('youtu.be/')[1]?.split('?')[0];
-      return videoId ? `https://www.youtube.com/watch?v=${videoId}` : url;
-    }
-    if (url.includes('youtube.com')) {
-      const urlObj = new URL(url);
-      const videoId = urlObj.searchParams.get('v');
-      if (videoId) {
-        return `https://www.youtube.com/watch?v=${videoId}`;
-      }
-    }
-    return url;
-  } catch (e) {
-    return url;
-  }
+// 💡 確実にYouTubeの検索結果を開く安全なリンク生成
+const getYouTubeSearchUrl = (title) => {
+  if (!title) return 'https://www.youtube.com';
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(title)}`;
 };
 
 const createEmptyBoard = () => {
   return Array(25).fill(null).map((_, index) => ({
     id: index,
     title: '',
-    url: '',
     isFree: index === 12,
     isOpen: index === 12,
   }));
@@ -39,7 +24,6 @@ export default function BingoApp() {
   const [isEditMode, setIsEditMode] = useState(true);
   const [isReadOnly, setIsReadOnly] = useState(false);
   const [inputTitle, setInputTitle] = useState('');
-  const [inputUrl, setInputUrl] = useState('');
   const [selectedCell, setSelectedCell] = useState(null);
   
   const [generatedImage, setGeneratedImage] = useState(null);
@@ -48,29 +32,47 @@ export default function BingoApp() {
   const [isTicketClaimed, setIsTicketClaimed] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
 
+  // 💡 共有URL（Base64エンコード対応）から安全にデータを復元する
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const dataParam = params.get('data');
 
     if (dataParam) {
       try {
-        const indices = dataParam.split(',').map(n => parseInt(n, 10));
+        // Base64からデコードしてJSONを復元（自由入力にも完全対応）
+        const jsonString = decodeURIComponent(escape(atob(dataParam)));
+        const savedTitles = JSON.parse(jsonString);
+
         const newBoard = createEmptyBoard().map((cell, index) => {
           if (cell.isFree) return cell;
-          const presetIndex = indices[index];
-          const song = (presetIndex !== undefined && ADMIN_PRESET_SONGS[presetIndex]) ? ADMIN_PRESET_SONGS[presetIndex] : { title: '', url: '' };
-          return { ...cell, title: song.title, url: song.url };
+          const title = savedTitles[index] || '';
+          return { ...cell, title };
         });
         setBoard(newBoard);
         setIsEditMode(false);
         setIsReadOnly(true);
       } catch (e) {
         console.error('共有データの読み込みに失敗しました', e);
+        // フォールバック（旧形式対応）
+        try {
+          const indices = dataParam.split(',').map(n => parseInt(n, 10));
+          const newBoard = createEmptyBoard().map((cell, index) => {
+            if (cell.isFree) return cell;
+            const presetIndex = indices[index];
+            const song = (presetIndex !== undefined && ADMIN_PRESET_SONGS[presetIndex]) ? ADMIN_PRESET_SONGS[presetIndex] : { title: '' };
+            return { ...cell, title: song.title };
+          });
+          setBoard(newBoard);
+          setIsEditMode(false);
+          setIsReadOnly(true);
+        } catch (err) {
+          window.alert('共有データの形式が正しくありません。');
+        }
       }
     } else {
-      const savedBoard = localStorage.getItem('vocaOvaBingoBoard');
-      const savedMode = localStorage.getItem('vocaOvaBingoMode');
-      const savedClaimed = localStorage.getItem('vocaOvaBingoClaimed');
+      const savedBoard = localStorage.getItem('vocaOvaBingoBoard_v3');
+      const savedMode = localStorage.getItem('vocaOvaBingoMode_v3');
+      const savedClaimed = localStorage.getItem('vocaOvaBingoClaimed_v3');
       if (savedBoard) setBoard(JSON.parse(savedBoard));
       if (savedMode) setIsEditMode(JSON.parse(savedMode));
       if (savedClaimed) setIsTicketClaimed(JSON.parse(savedClaimed));
@@ -79,46 +81,34 @@ export default function BingoApp() {
 
   useEffect(() => {
     if (!isReadOnly) {
-      localStorage.setItem('vocaOvaBingoBoard', JSON.stringify(board));
-      localStorage.setItem('vocaOvaBingoMode', JSON.stringify(isEditMode));
-      localStorage.setItem('vocaOvaBingoClaimed', JSON.stringify(isTicketClaimed));
+      localStorage.setItem('vocaOvaBingoBoard_v3', JSON.stringify(board));
+      localStorage.setItem('vocaOvaBingoMode_v3', JSON.stringify(isEditMode));
+      localStorage.setItem('vocaOvaBingoClaimed_v3', JSON.stringify(isTicketClaimed));
     }
   }, [board, isEditMode, isTicketClaimed, isReadOnly]);
 
-  const handleUrlChange = (e) => {
-    const urlVal = e.target.value;
-    setInputUrl(urlVal);
-    const cleanedInput = getCleanYouTubeUrl(urlVal);
-    const matchedSong = ADMIN_PRESET_SONGS.find(song => getCleanYouTubeUrl(song.url) === cleanedInput || song.url === urlVal);
-    if (matchedSong && !inputTitle) {
-      setInputTitle(matchedSong.title);
-    }
-  };
-
   const handleSaveCell = () => {
     if (selectedCell === null || isReadOnly) return;
-    const finalUrl = getCleanYouTubeUrl(inputUrl);
-    setBoard(board.map((cell, i) => i === selectedCell ? { ...cell, title: inputTitle || 'お気に入りの曲', url: finalUrl } : cell));
+    setBoard(board.map((cell, i) => i === selectedCell ? { ...cell, title: inputTitle.trim() || 'お気に入りの曲' } : cell));
     setInputTitle('');
-    setInputUrl('');
     setSelectedCell(null);
   };
 
   const handleAdminAutoFill = () => {
     if (isReadOnly) return;
-    const emptyCount = board.filter(cell => !cell.isFree && !cell.url).length;
+    const emptyCount = board.filter(cell => !cell.isFree && !cell.title).length;
     if (emptyCount === 0) return window.alert('すべてのマスが埋まっています！');
 
-    const existingUrls = new Set(board.filter(cell => cell.url).map(cell => getCleanYouTubeUrl(cell.url)));
-    const availablePresets = ADMIN_PRESET_SONGS.filter(song => !existingUrls.has(getCleanYouTubeUrl(song.url)));
+    const existingTitles = new Set(board.filter(cell => cell.title).map(cell => cell.title));
+    const availablePresets = ADMIN_PRESET_SONGS.filter(song => !existingTitles.has(song.title));
     const shuffledPreset = [...availablePresets].sort(() => Math.random() - 0.5);
 
     let songIndex = 0;
     const newBoard = board.map(cell => {
-      if (!cell.isFree && !cell.url && songIndex < shuffledPreset.length) {
+      if (!cell.isFree && !cell.title && songIndex < shuffledPreset.length) {
         const song = shuffledPreset[songIndex];
         songIndex++;
-        return { ...cell, title: song.title, url: song.url };
+        return { ...cell, title: song.title };
       }
       return cell;
     });
@@ -142,11 +132,9 @@ export default function BingoApp() {
     if (cell.isFree) return;
 
     if (isReadOnly) {
-      if (cell.url) {
-        const targetUrl = cell.url.includes('youtube.com') || cell.url.includes('youtu.be') 
-          ? getCleanYouTubeUrl(cell.url) 
-          : cell.url;
-        window.open(targetUrl, '_blank');
+      // 💡 閲覧時は常に安全なYouTube検索結果を開く
+      if (cell.title) {
+        window.open(getYouTubeSearchUrl(cell.title), '_blank');
       }
       return;
     }
@@ -154,7 +142,6 @@ export default function BingoApp() {
     if (isEditMode) {
       setSelectedCell(index);
       setInputTitle(cell.title);
-      setInputUrl(cell.url);
     } else {
       if (!cell.isOpen) {
         if (window.confirm('この曲が流れましたか？（マスを開けます）')) {
@@ -172,33 +159,32 @@ export default function BingoApp() {
     }
   };
 
+  // 💡 自由形式の文字も含めてURLに安全に埋め込めるように修正
   const handleConfirmParticipation = async () => {
-    const emptyCount = board.filter(cell => !cell.isFree && !cell.url).length;
+    const emptyCount = board.filter(cell => !cell.isFree && !cell.title).length;
     if (emptyCount > 0) {
       window.alert(`まだ ${emptyCount} マス空いています！すべてのマスを埋めてください。`);
       return;
     }
 
-    const urls = board.filter(cell => !cell.isFree).map(cell => getCleanYouTubeUrl(cell.url));
-    const uniqueUrls = new Set(urls);
-    if (uniqueUrls.size !== urls.length) {
-      window.alert('⚠️ 同じ曲（URL）が重複しているマスがあります！\n別の曲に設定し直してください。');
+    const titles = board.filter(cell => !cell.isFree).map(cell => cell.title);
+    const uniqueTitles = new Set(titles);
+    if (uniqueTitles.size !== titles.length) {
+      window.alert('⚠️ 同じ曲名が重複しているマスがあります！\n別の曲に設定し直してください。');
       return;
     }
 
-    if (!window.confirm('盤面を確定しますか？\n確定後はURLの変更ができなくなります。')) return;
+    if (!window.confirm('盤面を確定しますか？\n確定後は曲名の変更ができなくなります。')) return;
 
     setIsEditMode(false);
     setSelectedCell(null);
 
-    const indices = board.map(cell => {
-      if (cell.isFree) return -1;
-      const foundIdx = ADMIN_PRESET_SONGS.findIndex(s => getCleanYouTubeUrl(s.url) === getCleanYouTubeUrl(cell.url));
-      return foundIdx !== -1 ? foundIdx : 999;
-    });
+    // すべてのタイトルの配列をJSONにしてBase64エンコード（日本語・記号・自由入力の完全保護）
+    const titlesArray = board.map(cell => cell.isFree ? 'FREE' : (cell.title || ''));
+    const jsonString = JSON.stringify(titlesArray);
+    const base64Data = btoa(unescape(encodeURIComponent(jsonString)));
 
-    const dataString = indices.join(',');
-    const generatedShareableUrl = `${window.location.origin}${window.location.pathname}?data=${dataString}`;
+    const generatedShareableUrl = `${window.location.origin}${window.location.pathname}?data=${base64Data}`;
     setShareUrl(generatedShareableUrl);
 
     const element = document.getElementById('bingo-board-capture');
@@ -230,7 +216,7 @@ export default function BingoApp() {
       
       <h1 style={{ color: '#00bfff', marginBottom: '5px', fontWeight: '900' }}>ボカオバ ビンゴ</h1>
       <p style={{ color: '#666', marginBottom: '20px', fontSize: '14px', textAlign: 'center' }}>
-        {isReadOnly ? '【閲覧モード】他の参加者の予想カードです（タップで動画へ）' : (isEditMode ? '【セットアップモード】楽曲を予想しよう！' : '【プレイモード】曲が流れたらマスをタップ！')}
+        {isReadOnly ? '【閲覧モード】タップするとYouTubeで曲を検索できます！' : (isEditMode ? '【セットアップモード】楽曲を予想しよう！' : '【プレイモード】曲が流れたらマスをタップ！')}
       </p>
 
       <div id="bingo-board-capture" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', width: '100%', maxWidth: '520px', marginBottom: '30px', padding: '10px', backgroundColor: '#ffffff' }}>
@@ -284,11 +270,7 @@ export default function BingoApp() {
         <div style={{ width: '100%', maxWidth: '520px', padding: '15px', backgroundColor: '#e0f7fa', border: '1px solid #b2ebf2', borderRadius: '10px', marginBottom: '20px', boxSizing: 'border-box' }}>
           <div style={{ marginBottom: '10px', fontWeight: 'bold', color: '#00838f' }}>マス {selectedCell + 1} の楽曲を設定</div>
           <input 
-            type="text" value={inputTitle} onChange={(e) => setInputTitle(e.target.value)} placeholder="曲名（例: メルト / ryo）"
-            style={{ width: '100%', padding: '10px', border: '1px solid #cccccc', borderRadius: '5px', marginBottom: '10px', boxSizing: 'border-box' }}
-          />
-          <input 
-            type="text" value={inputUrl} onChange={handleUrlChange} placeholder="YouTubeまたはニコニコ動画のURL"
+            type="text" value={inputTitle} onChange={(e) => setInputTitle(e.target.value)} placeholder="曲名（自由入力OK）"
             style={{ width: '100%', padding: '10px', border: '1px solid #cccccc', borderRadius: '5px', marginBottom: '10px', boxSizing: 'border-box' }}
           />
           <button onClick={handleSaveCell} style={{ width: '100%', padding: '10px', backgroundColor: '#00bfff', color: '#ffffff', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}>このマスに保存</button>
