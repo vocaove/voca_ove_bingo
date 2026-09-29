@@ -524,19 +524,41 @@ export default function BingoApp() {
     }
   }, [board, isEditMode, isTicketClaimed, isReadOnly]);
 
+  // 💡 参加者がURLを入力したとき、プリセットに存在すれば曲名を自動補完する機能
+  const handleUrlChange = (e) => {
+    const urlVal = e.target.value;
+    setInputUrl(urlVal);
+
+    // 入力されたURLがプリセットリストのいずれかに一致していれば、自動で曲名をセット
+    const cleanedInput = getCleanYouTubeUrl(urlVal);
+    const matchedSong = ADMIN_PRESET_SONGS.find(song => getCleanYouTubeUrl(song.url) === cleanedInput || song.url === urlVal);
+    if (matchedSong && !inputTitle) {
+      setInputTitle(matchedSong.title);
+    }
+  };
+
   const handleSaveCell = () => {
     if (selectedCell === null || isReadOnly) return;
-    setBoard(board.map((cell, i) => i === selectedCell ? { ...cell, title: inputTitle || 'お気に入り曲', url: inputUrl } : cell));
+    const finalUrl = getCleanYouTubeUrl(inputUrl);
+    setBoard(board.map((cell, i) => i === selectedCell ? { ...cell, title: inputTitle || 'お気に入りの曲', url: finalUrl } : cell));
     setInputTitle('');
     setInputUrl('');
     setSelectedCell(null);
   };
 
+  // 💡 おまかせ入力で「同一URLが絶対に出ない」ように重複防止ロジックを強化
   const handleAdminAutoFill = () => {
     if (isReadOnly) return;
     const emptyCount = board.filter(cell => !cell.isFree && !cell.url).length;
     if (emptyCount === 0) return window.alert('すべてのマスが埋まっています！');
-    const shuffledPreset = [...ADMIN_PRESET_SONGS].sort(() => Math.random() - 0.5);
+
+    // 既に手動で埋まっているセルのURLを収集
+    const existingUrls = new Set(board.filter(cell => cell.url).map(cell => getCleanYouTubeUrl(cell.url)));
+
+    // プリセットの中からまだボードに使われていない曲だけを抽出し、シャッフル
+    const availablePresets = ADMIN_PRESET_SONGS.filter(song => !existingUrls.has(getCleanYouTubeUrl(song.url)));
+    const shuffledPreset = [...availablePresets].sort(() => Math.random() - 0.5);
+
     let songIndex = 0;
     const newBoard = board.map(cell => {
       if (!cell.isFree && !cell.url && songIndex < shuffledPreset.length) {
@@ -603,7 +625,7 @@ export default function BingoApp() {
       return;
     }
 
-    const urls = board.filter(cell => !cell.isFree).map(cell => cell.url.trim());
+    const urls = board.filter(cell => !cell.isFree).map(cell => getCleanYouTubeUrl(cell.url));
     const uniqueUrls = new Set(urls);
     if (uniqueUrls.size !== urls.length) {
       window.alert('⚠️ 同じ曲（URL）が重複しているマスがあります！\n別の曲に設定し直してください。');
@@ -617,7 +639,7 @@ export default function BingoApp() {
 
     const indices = board.map(cell => {
       if (cell.isFree) return -1;
-      const foundIdx = ADMIN_PRESET_SONGS.findIndex(s => s.url === cell.url);
+      const foundIdx = ADMIN_PRESET_SONGS.findIndex(s => getCleanYouTubeUrl(s.url) === getCleanYouTubeUrl(cell.url));
       return foundIdx !== -1 ? foundIdx : 999;
     });
 
@@ -712,7 +734,7 @@ export default function BingoApp() {
             style={{ width: '100%', padding: '10px', border: '1px solid #cccccc', borderRadius: '5px', marginBottom: '10px', boxSizing: 'border-box' }}
           />
           <input 
-            type="text" value={inputUrl} onChange={(e) => setInputUrl(e.target.value)} placeholder="YouTubeまたはニコニコ動画のURL"
+            type="text" value={inputUrl} onChange={handleUrlChange} placeholder="YouTubeまたはニコニコ動画のURL"
             style={{ width: '100%', padding: '10px', border: '1px solid #cccccc', borderRadius: '5px', marginBottom: '10px', boxSizing: 'border-box' }}
           />
           <button onClick={handleSaveCell} style={{ width: '100%', padding: '10px', backgroundColor: '#00bfff', color: '#ffffff', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}>このマスに保存</button>
