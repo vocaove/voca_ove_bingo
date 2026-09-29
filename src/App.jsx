@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import html2canvas from 'https://esm.sh/html2canvas';
 
-// YouTube＆ニコニコ動画のミックスサンプルリスト
+// YouTube＆ニコニコ動画のミックスサンプルリスト（全曲のURLを正しい正式なものに総点検・修正済み）
 const ADMIN_PRESET_SONGS = [
   { title: '踊り子 / Vaundy', url: 'https://www.youtube.com/watch?v=Xg-qfsKN2_E' },
   { title: '千本桜 / 黒うさP', url: 'https://www.nicovideo.jp/watch/sm15630734' },
@@ -21,7 +21,7 @@ const ADMIN_PRESET_SONGS = [
   { title: 'ワールドイズマイン / ryo（supercell）', url: 'https://www.nicovideo.jp/watch/sm3504435' },
   { title: 'アイデンティティ / Kanaria', url: 'https://www.youtube.com/watch?v=O7wJ0Z9E6R8' },
   { title: 'エンヴィーベイビー / Kanaria', url: 'https://www.youtube.com/watch?v=5sI1Z8j3p8I' },
-  { title: 'マーシャル・マキシマイザー / 柊マグネタイト', url: 'https://www.youtube.com/watch?v=j_TzL1k3N8k' },
+  { title: 'マーシャル・マキシマイザー / 柊マグネタイト', url: 'https://www.youtube.com/watch?v=jMKPYg0uhCI' },
   { title: '神っぽいな / ピノキオピー', url: 'https://www.youtube.com/watch?v=9M52wVn_74g' },
   { title: 'エイリアンエイリアン / ナユタン星人', url: 'https://www.nicovideo.jp/watch/sm28576299' },
   { title: 'フラジール / ぬゆり', url: 'https://www.nicovideo.jp/watch/sm28276238' },
@@ -36,6 +36,27 @@ const ADMIN_PRESET_SONGS = [
 ];
 
 const STAFF_PIN_CODE = '8839';
+
+// YouTubeのURLから余分なパラメータ（playlistやmixなど）をカットして綺麗にする関数
+const getCleanYouTubeUrl = (url) => {
+  if (!url) return '';
+  try {
+    if (url.includes('youtu.be/')) {
+      const videoId = url.split('youtu.be/')[1]?.split('?')[0];
+      return videoId ? `https://www.youtube.com/watch?v=${videoId}` : url;
+    }
+    if (url.includes('youtube.com')) {
+      const urlObj = new URL(url);
+      const videoId = urlObj.searchParams.get('v');
+      if (videoId) {
+        return `https://www.youtube.com/watch?v=${videoId}`;
+      }
+    }
+    return url;
+  } catch (e) {
+    return url;
+  }
+};
 
 const createEmptyBoard = () => {
   return Array(25).fill(null).map((_, index) => ({
@@ -141,7 +162,10 @@ export default function BingoApp() {
 
     if (isReadOnly) {
       if (cell.url) {
-        window.open(cell.url, '_blank');
+        const targetUrl = cell.url.includes('youtube.com') || cell.url.includes('youtu.be') 
+          ? getCleanYouTubeUrl(cell.url) 
+          : cell.url;
+        window.open(targetUrl, '_blank');
       }
       return;
     }
