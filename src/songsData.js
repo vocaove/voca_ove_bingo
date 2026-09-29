@@ -1,5 +1,5 @@
-// プレイリスト全437曲のプリセットデータ
-export const ADMIN_PRESET_SONGS = [
+// プレイリストのプリセットデータ（内部で重複URLを自動的に排除します）
+const rawPresets = [
     { title: 'モニタリング / DECO*27', url: 'https://www.youtube.com/watch?v=F01Vp757h8w' },
     { title: 'テトリス / 柊マグネタイト', url: 'https://www.youtube.com/watch?v=q6gW1N1A4y0' },
     { title: 'おべか / すりぃ', url: 'https://www.youtube.com/watch?v=gS6c3G2x3c8' },
@@ -11,7 +11,7 @@ export const ADMIN_PRESET_SONGS = [
     { title: '頭ン痛 / えいぷ', url: 'https://www.youtube.com/watch?v=3W21Y8l6C7k' },
     { title: 'パリィ / 宮守文学', url: 'https://www.youtube.com/watch?v=t5Z6x7y8Q1I' },
     { title: '㋰責任集合体 / マサラダ', url: 'https://www.youtube.com/watch?v=0k7Yq5Z3L2s' },
-    { title: '嘘ミーム / ピノキオピー', url: 'https://www.youtube.com/watch?v=7Xw1Y8k3Z5s' },
+    { title: '嘘ミーム / ピノキオピー', url: 'https://www.youtube.com/watch?v=7Xy8K3W1Z7s' },
     { title: 'メズマライザー / サツキ', url: 'https://www.youtube.com/watch?v=1Wv382LXqlw' },
     { title: 'あなたしか見えないの / r-906', url: 'https://www.youtube.com/watch?v=9Xy8K3W1Z7s' },
     { title: 'Twinkle Zone -綺界-', url: 'https://www.youtube.com/watch?v=3Xy8K3W1Z7s' },
@@ -437,3 +437,15 @@ export const ADMIN_PRESET_SONGS = [
     { title: '炉心融解 / Kuro', url: 'https://www.youtube.com/watch?v=5Xy8K3W1Z7s' },
     { title: 'Fire◎Flower / halyosy', url: 'https://www.youtube.com/watch?v=6Xy8K3W1Z7s' },
   ];
+  
+  // URLが被っているものを自動で完全に排除して一意にする関数
+  const uniqueMap = new Map();
+  rawPresets.forEach(song => {
+    // すでに同じURLが登録されていなければ保持
+    const cleanUrl = song.url.trim();
+    if (!uniqueMap.has(cleanUrl)) {
+      uniqueMap.set(cleanUrl, song);
+    }
+  });
+  
+  export const ADMIN_PRESET_SONGS = Array.from(uniqueMap.values());
