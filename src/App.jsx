@@ -4,7 +4,6 @@ import { ADMIN_PRESET_SONGS } from './songsData';
 
 const STAFF_PIN_CODE = '8839';
 
-// 💡 確実にYouTubeの検索結果を開く安全なリンク生成
 const getYouTubeSearchUrl = (title) => {
   if (!title) return 'https://www.youtube.com';
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(title)}`;
@@ -32,38 +31,55 @@ export default function BingoApp() {
   const [isTicketClaimed, setIsTicketClaimed] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
 
-  // 💡 特殊文字や日本語に完全対応した安全なURLデータ復元
+  // 💡 Base64形式、JSON形式、旧形式のすべてを確実に復元するパーサー
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const dataParam = params.get('data');
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const dataParam = params.get('data');
 
-    if (dataParam) {
-      try {
-        // encodeURIComponentでエンコードされた文字列を確実にデコード
-        const jsonString = decodeURIComponent(dataParam);
-        const savedTitles = JSON.parse(jsonString);
+      if (dataParam) {
+        let savedTitles = [];
+        let success = false;
 
-        const newBoard = createEmptyBoard().map((cell, index) => {
-          if (cell.isFree) return cell;
-          const title = savedTitles[index] || '';
-          return { ...cell, title };
-        });
-        setBoard(newBoard);
-        setIsEditMode(false);
-        setIsReadOnly(true);
-      } catch (e) {
-        console.error('共有データの読み込みに失敗しました', e);
-        // フォールバック（旧形式 Base64 やカンマ区切り対応）
+        // 試行1: Base64デコードを試す（現在のX共有形式）
         try {
-          let savedTitles = [];
-          if (dataParam.includes(',')) {
+          const decodedBinary = atob(dataParam);
+          const jsonString = decodeURIComponent(escape(decodedBinary));
+          savedTitles = JSON.parse(jsonString);
+          if (Array.isArray(savedTitles) && savedTitles.length === 25) {
+            success = true;
+          }
+        } catch (e1) {
+          // Base64ではない場合スキップ
+        }
+
+        // 試行2: 通常のJSON文字列デコードを試す
+        if (!success) {
+          try {
+            const jsonString = decodeURIComponent(dataParam);
+            savedTitles = JSON.parse(jsonString);
+            if (Array.isArray(savedTitles) && savedTitles.length === 25) {
+              success = true;
+            }
+          } catch (e2) {
+            // JSONではない場合スキップ
+          }
+        }
+
+        // 試行3: カンマ区切りのインデックス形式を試す（レガシー形式）
+        if (!success) {
+          try {
             const indices = dataParam.split(',').map(n => parseInt(n, 10));
             savedTitles = indices.map(presetIndex => (presetIndex !== undefined && ADMIN_PRESET_SONGS[presetIndex]) ? ADMIN_PRESET_SONGS[presetIndex].title : '');
-          } else {
-            const decoded = atob(dataParam);
-            savedTitles = JSON.parse(decodeURIComponent(escape(decoded)));
+            if (savedTitles.length === 25) {
+              success = true;
+            }
+          } catch (e3) {
+            // 失敗
           }
+        }
 
+        if (success) {
           const newBoard = createEmptyBoard().map((cell, index) => {
             if (cell.isFree) return cell;
             return { ...cell, title: savedTitles[index] || '' };
@@ -71,25 +87,32 @@ export default function BingoApp() {
           setBoard(newBoard);
           setIsEditMode(false);
           setIsReadOnly(true);
-        } catch (err) {
-          window.alert('共有データの読み込みに失敗しました。');
+          return;
         }
       }
-    } else {
-      const savedBoard = localStorage.getItem('vocaOvaBingoBoard_v4');
-      const savedMode = localStorage.getItem('vocaOvaBingoMode_v4');
-      const savedClaimed = localStorage.getItem('vocaOvaBingoClaimed_v4');
+
+      // 通常のローカルストレージ読み込み
+      const savedBoard = localStorage.getItem('vocaOvaBingoBoard_v6');
+      const savedMode = localStorage.getItem('vocaOvaBingoMode_v6');
+      const savedClaimed = localStorage.getItem('vocaOvaBingoClaimed_v6');
       if (savedBoard) setBoard(JSON.parse(savedBoard));
       if (savedMode) setIsEditMode(JSON.parse(savedMode));
       if (savedClaimed) setIsTicketClaimed(JSON.parse(savedClaimed));
+
+    } catch (e) {
+      console.error('データの読み込みに失敗しました', e);
     }
   }, []);
 
   useEffect(() => {
     if (!isReadOnly) {
-      localStorage.setItem('vocaOvaBingoBoard_v4', JSON.stringify(board));
-      localStorage.setItem('vocaOvaBingoMode_v4', JSON.stringify(isEditMode));
-      localStorage.setItem('vocaOvaBingoClaimed_v4', JSON.stringify(isTicketClaimed));
+      try {
+        localStorage.setItem('vocaOvaBingoBoard_v6', JSON.stringify(board));
+        localStorage.setItem('vocaOvaBingoMode_v6', JSON.stringify(isEditMode));
+        localStorage.setItem('vocaOvaBingoClaimed_v6', JSON.stringify(isTicketClaimed));
+      } catch (e) {
+        console.error('LocalStorage save error', e);
+      }
     }
   }, [board, isEditMode, isTicketClaimed, isReadOnly]);
 
@@ -164,7 +187,7 @@ export default function BingoApp() {
     }
   };
 
-  // 💡 特殊文字を含めて安全にURL化する方式
+  // 💡 確実にBase64形式でエンコードしてURLに格納
   const handleConfirmParticipation = async () => {
     const emptyCount = board.filter(cell => !cell.isFree && !cell.title).length;
     if (emptyCount > 0) {
@@ -186,9 +209,9 @@ export default function BingoApp() {
 
     const titlesArray = board.map(cell => cell.isFree ? 'FREE' : (cell.title || ''));
     const jsonString = JSON.stringify(titlesArray);
-    const encodedData = encodeURIComponent(jsonString);
+    const base64Data = btoa(unescape(encodeURIComponent(jsonString)));
 
-    const generatedShareableUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
+    const generatedShareableUrl = `${window.location.origin}${window.location.pathname}?data=${base64Data}`;
     setShareUrl(generatedShareableUrl);
 
     const element = document.getElementById('bingo-board-capture');
